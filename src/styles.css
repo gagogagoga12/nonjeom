@@ -1,0 +1,48 @@
+/* PRD §9 — 본문 최소 12px, 회의실 프로젝터에서 읽히는 것이 실질 기준 */
+:root { color-scheme: light; }
+
+body {
+  margin: 0;
+  background: #f5f5f5;
+  font-family: Pretendard, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+* { box-sizing: border-box; }
+input, textarea, button { font-family: inherit; }
+input:focus, textarea:focus {
+  outline: none;
+  border-color: #4096ff;
+  box-shadow: 0 0 0 2px rgba(5, 145, 255, 0.1);
+}
+::placeholder { color: rgba(0, 0, 0, 0.45); }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 6px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+@keyframes nj-toast-in { from { opacity: 0; transform: translateY(10px) scale(.98) } to { opacity: 1; transform: translateY(0) scale(1) } }
+@keyframes nj-pop-in   { from { opacity: 0; transform: scale(.97) translateY(-4px) } to { opacity: 1; transform: scale(1) translateY(0) } }
+@keyframes nj-drop-in  { from { opacity: 0; transform: translateX(-50%) translateY(-8px) } to { opacity: 1; transform: translateX(-50%) translateY(0) } }
+@keyframes nj-panel-in { from { opacity: 0; transform: translateX(10px) } to { opacity: 1; transform: translateX(0) } }
+
+/* PRD §9 — prefers-reduced-motion 대응 */
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+/* 좁은 창(<1280px)에서는 우측 패널이 캔버스를 밀지 않고 위에 겹쳐 뜬다 */
+.nj-panel-scrim { display: none; }
+@media (max-width: 1279px) {
+  .nj-panel { position: absolute; right: 0; top: 0; bottom: 0; z-index: 70; box-shadow: -14px 0 40px #d9d9d9; }
+  .nj-panel-scrim { display: block; }
+}
+
+.nj-hover-lift { transition: transform .12s cubic-bezier(.23,1,.32,1); }
+.nj-hover-lift:hover { transform: scale(1.06); }
+.nj-hover-lift:active { transform: scale(.94); }
