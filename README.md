@@ -7,8 +7,8 @@
 > **설계 제1원칙 — 즉시성.** 회의는 사람을 기다려주지 않는다. 기록자가 화면을 찾아 헤매는 순간
 > 기록은 끊긴다. 모든 입력은 캔버스를 벗어나지 않고, 최소 조작으로 끝나야 한다.
 
-구현 기준 문서는 [`docs/prd.pdf`](docs/prd.pdf) (PRD v1.0)이며, 화면 동작의 근거는
-확정된 프로토타입 [`docs/prototype/논점 - 회의 논점 시각화 서비스.dc.html`](docs/prototype)이다.
+구현 기준 문서는 [`docs/prd.pdf`](docs/prd.pdf) (PRD v1.0)이다.
+화면 동작의 근거가 된 확정 프로토타입과 디자인 시스템 원본은 저장소에 포함하지 않는다.
 
 ---
 
@@ -186,7 +186,6 @@ firestore.indexes.json ownerId + updatedAt 복합 색인 (지난 회의 목록�
   deploy.yml           GitHub Pages 배포
 docs/
   prd.pdf              구현 기준 문서
-  prototype/           확정된 프로토타입과 디자인 시스템
 ```
 
 ### 데이터 모델 (PRD §4)
