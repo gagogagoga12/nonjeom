@@ -1,0 +1,68 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  # 수동 실행도 열어둔다 (Actions 탭 → Run workflow)
+  workflow_dispatch:
+
+# GITHUB_TOKEN에 Pages 배포 권한을 준다
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 배포는 한 번에 하나만. 진행 중인 실행은 취소하지 않는다(중간에 끊긴 배포를 남기지 않기 위해).
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit -p tsconfig.json
+
+      - name: Build
+        env:
+          # Pages는 /<repo>/ 하위 경로로 서빙된다
+          BASE_PATH: /${{ github.event.repository.name }}/
+          # Firebase 웹 설정은 비밀이 아니지만(클라이언트 번들에 실린다) 프로젝트마다
+          # 달라지므로 저장소 Variables로 주입한다. 비어 있으면 앱은 로컬 전용으로 빌드된다.
+          VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
+        run: npm run build
+
+      - name: SPA fallback
+        # Pages에는 라우터 폴백이 없다. 404.html을 index.html로 두면
+        # 하위 경로로 직접 들어와도 앱이 뜬다.
+        run: cp dist/index.html dist/404.html
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

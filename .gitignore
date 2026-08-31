@@ -7,3 +7,11 @@ dist/
 .vite/
 tsconfig.tsbuildinfo
 *.tsbuildinfo
+
+# Claude Code가 만드는 격리 워크트리 (메인 체크아웃에서 추적하지 않는다)
+.claude/worktrees/
+
+# Firebase CLI 로컬 산출물
+.firebase/
+firebase-debug.log
+firestore-debug.log

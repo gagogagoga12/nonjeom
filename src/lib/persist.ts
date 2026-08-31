@@ -22,6 +22,8 @@ export interface Persisted {
   wrap: Record<string, WrapChoice>;
   wrapIds: string[] | null;
   wrapOrig: Record<string, Status>;
+  /** Firestore 회의 문서 id. 로컬 전용으로 시작한 회의는 null. */
+  meetingId: string | null;
   savedAt: number;
 }
 

@@ -14,6 +14,8 @@ import type {
   MeetNode, Participant, QuickState, Screen, Status, WrapChoice
 } from './types';
 import type { AppApi } from './api';
+import * as cloud from './lib/cloud';
+import { isCloudConfigured, signIn, signOutAccount, watchAccount, type Account } from './lib/firebase';
 import SetupScreen from './screens/SetupScreen';
 import MeetingScreen from './screens/MeetingScreen';
 import WrapScreen from './screens/WrapScreen';
@@ -80,6 +82,15 @@ export interface AppState {
   copied: boolean;
   /** 저장된 회의가 있으면 세팅 화면에서 이어하기를 제안한다 */
   saved: persist.Persisted | null;
+
+  // ─ 클라우드 (Firestore). 설정·로그인이 없으면 전부 비활성이고 앱은 로컬 전용으로 돈다.
+  account: Account | null;
+  /** 이 회의의 Firestore 문서 id. 로그인 상태로 시작하면 발급된다. */
+  meetingId: string | null;
+  sync: 'idle' | 'saving' | 'saved' | 'error';
+  syncAt: number;
+  cloudList: cloud.MeetingSummary[];
+  cloudBusy: boolean;
 }
 
 const initialState = (): AppState => ({
@@ -131,7 +142,13 @@ const initialState = (): AppState => ({
   wrapOrig: {},
   quotes: {},
   copied: false,
-  saved: null
+  saved: null,
+  account: null,
+  meetingId: null,
+  sync: 'idle',
+  syncAt: 0,
+  cloudList: [],
+  cloudBusy: false
 });
 
 export default class App extends React.Component<Record<string, never>, AppState> implements AppApi {
@@ -156,6 +173,8 @@ export default class App extends React.Component<Record<string, never>, AppState
   private undoT: number | undefined;
   private autoPanT: number | undefined;
   private saveT: number | undefined;
+  private cloudT: number | undefined;
+  private unwatchAccount: (() => void) | null = null;
   private barRO: ResizeObserver | null = null;
   private wheelH: ((e: WheelEvent) => void) | null = null;
   /** 노드 본체 누름 시작점 (5px 넘게 끌면 '옮기기'로 전환) */
@@ -189,6 +208,13 @@ export default class App extends React.Component<Record<string, never>, AppState
     const saved = persist.load();
     if (saved && saved.nodes.length) this.setState({ saved });
     void probeAi();
+    // 로그인 상태가 확인되면 지난 회의 목록을 끌어온다. 설정이 없으면 즉시 null이 온다.
+    this.unwatchAccount = watchAccount((account) => {
+      this.setState({ account }, () => {
+        if (account) void this.refreshCloudList();
+        else this.setState({ cloudList: [], meetingId: null, sync: 'idle' });
+      });
+    });
     requestAnimationFrame(() => this.measureText());
   }
 
@@ -197,6 +223,8 @@ export default class App extends React.Component<Record<string, never>, AppState
     clearTimeout(this.noticeT);
     clearTimeout(this.undoT);
     clearTimeout(this.saveT);
+    clearTimeout(this.cloudT);
+    this.unwatchAccount?.();
     this.stopAutoPan();
     this.barRO?.disconnect();
     if (this.cv && this.wheelH) this.cv.removeEventListener('wheel', this.wheelH);
@@ -233,7 +261,10 @@ export default class App extends React.Component<Record<string, never>, AppState
     this.prevSnap = { nodes: s.nodes, labels: s.labels };
   }
 
-  /** PRD §9 데이터 유실 — 회의 중 새로고침에도 기록이 남아야 한다 */
+  /**
+   * PRD §9 데이터 유실 — 회의 중 새로고침에도 기록이 남아야 한다.
+   * 로컬이 진실의 원본이고, 로그인돼 있으면 Firestore로 한 박자 늦게 흘려보낸다.
+   */
   private scheduleSave(): void {
     if (this.state.screen === 'setup') return;
     clearTimeout(this.saveT);
@@ -243,9 +274,45 @@ export default class App extends React.Component<Record<string, never>, AppState
         screen: s.screen, title: s.title, participants: s.participants, partSeq: s.partSeq,
         agendas: s.agendas, nodes: s.nodes, labels: s.labels, seq: s.seq, labelSeq: s.labelSeq,
         startedAt: s.startedAt, elapsed: s.elapsed, collapsed: s.collapsed,
-        wrap: s.wrap, wrapIds: s.wrapIds, wrapOrig: s.wrapOrig
+        wrap: s.wrap, wrapIds: s.wrapIds, wrapOrig: s.wrapOrig,
+        meetingId: s.meetingId
       });
+      this.scheduleCloudSync();
     }, 600);
+  }
+
+  /**
+   * Firestore 동기화. 로컬 저장보다 훨씬 느슨한 주기로 밀어낸다 —
+   * 타이핑 한 글자마다 쓰기를 날리면 요금과 지연만 는다.
+   * 실패해도 로컬 기록은 남아 있으므로 회의는 멈추지 않는다.
+   */
+  private scheduleCloudSync(): void {
+    if (!this.state.account || !this.state.meetingId) return;
+    if (this.cloudT) return;
+    this.cloudT = window.setTimeout(() => {
+      this.cloudT = undefined;
+      void this.syncNow();
+    }, 4000);
+  }
+
+  private async syncNow(): Promise<void> {
+    const s = this.state;
+    const owner = s.account?.uid;
+    const id = s.meetingId;
+    if (!owner || !id || s.screen === 'setup') return;
+    this.setState({ sync: 'saving' });
+    const res = await cloud.saveMeeting(owner, id, {
+      title: s.title, screen: s.screen, participants: s.participants, agendas: s.agendas,
+      nodes: s.nodes, labels: s.labels, seq: s.seq, labelSeq: s.labelSeq, partSeq: s.partSeq,
+      startedAt: s.startedAt, elapsed: s.elapsed, collapsed: s.collapsed,
+      wrap: s.wrap, wrapIds: s.wrapIds, wrapOrig: s.wrapOrig
+    });
+    if (res.ok) {
+      this.setState({ sync: 'saved', syncAt: Date.now() });
+      return;
+    }
+    this.setState({ sync: 'error' });
+    if (res.reason === 'too-large') this.notify('회의가 너무 커서 클라우드 저장에 실패했습니다');
   }
 
   private onResize = (): void => {
@@ -776,9 +843,12 @@ export default class App extends React.Component<Record<string, never>, AppState
         screen: 'meeting', nodes, seq, currentId: nodes[0].id,
         title: s.title.trim() || '제목 없는 회의',
         startedAt: Date.now(), elapsed: 0, pan: { x: 24, y: 12 }, zoom: 1,
-        wrap: {}, wrapIds: null, saved: null, labels: [], collapsed: {}, expanded: {}
+        wrap: {}, wrapIds: null, saved: null, labels: [], collapsed: {}, expanded: {},
+        // 로그인돼 있으면 이 회의에 클라우드 문서 id를 붙여 시작한다
+        meetingId: s.account ? cloud.newMeetingId() : null,
+        sync: 'idle'
       },
-      () => { this.ensureVisible(nodes[0].id); this.focusCanvas(); }
+      () => { this.ensureVisible(nodes[0].id); this.focusCanvas(); void this.syncNow(); }
     );
   }
 
@@ -792,10 +862,72 @@ export default class App extends React.Component<Record<string, never>, AppState
       nodes: v.nodes, labels: v.labels, seq: v.seq, labelSeq: v.labelSeq,
       startedAt: v.startedAt, elapsed: v.elapsed, collapsed: v.collapsed,
       wrap: v.wrap, wrapIds: v.wrapIds, wrapOrig: v.wrapOrig,
-      currentId: v.nodes[0]?.id ?? null, saved: null, pan: { x: 24, y: 12 }, zoom: 1
+      currentId: v.nodes[0]?.id ?? null, saved: null, pan: { x: 24, y: 12 }, zoom: 1,
+      // 로컬 기록이 어느 클라우드 회의에 속했는지 알면 그 문서로 이어서 쓴다
+      meetingId: v.meetingId ?? (this.state.account ? cloud.newMeetingId() : null)
     }, () => this.notify('저장된 회의를 이어서 엽니다'));
   }
   discardSaved(): void { persist.clear(); this.setState({ saved: null }); }
+
+  // ─────────────────────────────────────── 클라우드 (Firestore · 선택 기능)
+
+  cloudEnabled(): boolean { return isCloudConfigured(); }
+
+  async signInCloud(): Promise<void> {
+    const a = await signIn();
+    if (!a) { this.notify('로그인하지 못했습니다'); return; }
+    this.setState({ account: a }, () => void this.refreshCloudList());
+  }
+
+  async signOutCloud(): Promise<void> {
+    await signOutAccount();
+    this.setState({ account: null, cloudList: [], meetingId: null, sync: 'idle' });
+  }
+
+  async refreshCloudList(): Promise<void> {
+    const uid = this.state.account?.uid;
+    if (!uid) return;
+    this.setState({ cloudBusy: true });
+    const rows = await cloud.listMeetings(uid);
+    this.setState({ cloudList: rows, cloudBusy: false });
+  }
+
+  /** 지난 회의를 클라우드에서 열어 그대로 이어 쓴다 */
+  async openCloudMeeting(id: string): Promise<void> {
+    this.setState({ cloudBusy: true });
+    const v = await cloud.loadMeeting(id);
+    this.setState({ cloudBusy: false });
+    if (!v) { this.notify('회의를 불러오지 못했습니다'); return; }
+    this.measured = {}; this.measuredH = {}; this.hist = [];
+    this.setState(
+      {
+        screen: v.screen === 'setup' ? 'meeting' : v.screen,
+        title: v.title, participants: v.participants, partSeq: v.partSeq, agendas: v.agendas,
+        nodes: v.nodes, labels: v.labels, seq: v.seq, labelSeq: v.labelSeq,
+        startedAt: v.startedAt, elapsed: v.elapsed, collapsed: v.collapsed,
+        wrap: v.wrap, wrapIds: v.wrapIds, wrapOrig: v.wrapOrig,
+        currentId: v.nodes[0]?.id ?? null, saved: null, meetingId: v.id,
+        pan: { x: 24, y: 12 }, zoom: 1, expanded: {}, sync: 'saved', syncAt: v.updatedAt
+      },
+      () => this.notify(
+        v.slidesLocalOnly
+          ? '회의를 열었습니다 · 장표 이미지는 올린 기기에만 있습니다'
+          : '회의를 열었습니다'
+      )
+    );
+  }
+
+  async deleteCloudMeeting(id: string): Promise<void> {
+    const ok = await cloud.deleteMeeting(id);
+    if (!ok) { this.notify('삭제하지 못했습니다'); return; }
+    this.setState((x) => ({
+      cloudList: x.cloudList.filter((m) => m.id !== id),
+      meetingId: x.meetingId === id ? null : x.meetingId
+    }));
+  }
+
+  /** 툴바의 수동 저장 — 자동 동기화를 기다리지 않고 지금 밀어낸다 */
+  syncCloudNow(): void { void this.syncNow(); }
 
   /** 시나리오 A를 그대로 재현한 예시 회의 (PRD §3) */
   loadSample(): void {
@@ -839,7 +971,8 @@ export default class App extends React.Component<Record<string, never>, AppState
         partSeq: 4,
         startedAt: Date.now() - 2298 * 1000, elapsed: 2298,
         pan: { x: 24, y: 12 }, zoom: 0.9, wrap: {}, wrapIds: null, drag: null, saved: null,
-        labels: [], collapsed: {}, expanded: {}
+        labels: [], collapsed: {}, expanded: {},
+        meetingId: this.state.account ? cloud.newMeetingId() : null, sync: 'idle'
       },
       () => requestAnimationFrame(() => this.focusOn('n3', false))
     );
@@ -1335,7 +1468,8 @@ export default class App extends React.Component<Record<string, never>, AppState
       return { wrap: w };
     });
   }
-  finish(): void { this.setState({ screen: 'minutes' }); }
+  /** 회의록이 나온 시점은 확정본이다 — 자동 주기를 기다리지 않고 바로 밀어낸다 */
+  finish(): void { this.setState({ screen: 'minutes' }, () => void this.syncNow()); }
   toggleQuotes(id: string): void {
     this.setState((x) => ({ quotes: { ...x.quotes, [id]: !x.quotes[id] } }));
   }
@@ -1366,8 +1500,15 @@ export default class App extends React.Component<Record<string, never>, AppState
   }
   newMeeting(): void {
     persist.clear();
+    clearTimeout(this.cloudT);
+    this.cloudT = undefined;
     this.measured = {}; this.measuredH = {}; this.hist = [];
-    this.setState({ ...initialState(), vw: window.innerWidth });
+    // 방금 끝낸 회의는 클라우드에 그대로 남는다 — 로그인 상태와 목록만 이어받는다
+    const { account, cloudList } = this.state;
+    this.setState(
+      { ...initialState(), vw: window.innerWidth, account, cloudList },
+      () => { if (account) void this.refreshCloudList(); }
+    );
   }
 
   // ─────────────────────────────────────────────────────────── 캔버스 DOM 연결

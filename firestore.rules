@@ -1,0 +1,44 @@
+rules_version = '2';
+
+// 논점 — 회의 문서 접근 규칙.
+//
+// Firebase 웹 설정값은 클라이언트 번들에 그대로 실리므로 비밀이 아니다.
+// 실제 접근 제어는 전적으로 이 규칙이 한다: 자기 회의만 읽고 쓴다.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /meetings/{meetingId} {
+      function signedIn() {
+        return request.auth != null;
+      }
+      function isOwner() {
+        return signedIn() && resource.data.ownerId == request.auth.uid;
+      }
+      // 문서 크기 한계(1MB)에 근접한 쓰기를 막는다. 장표 이미지는 클라이언트에서
+      // 이미 떼어내지만, 규칙 쪽에서도 한 번 더 막아 사고를 줄인다.
+      function sane() {
+        return request.resource.data.title is string
+          && request.resource.data.title.size() <= 300
+          && request.resource.data.nodes is list
+          && request.resource.data.nodes.size() <= 2000;
+      }
+
+      allow read, delete: if isOwner();
+
+      // 생성 시에는 resource가 없으므로 request.resource로 소유자를 확인한다
+      allow create: if signedIn()
+        && request.resource.data.ownerId == request.auth.uid
+        && sane();
+
+      // 소유자만 수정할 수 있고, 소유자를 바꿔치기할 수 없다
+      allow update: if isOwner()
+        && request.resource.data.ownerId == resource.data.ownerId
+        && sane();
+    }
+
+    // 그 밖의 모든 경로는 막는다
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

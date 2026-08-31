@@ -112,6 +112,46 @@ export default function MeetingScreen({ app, s }: { app: App; s: AppState }): Re
           경과 {app.elapsedLabel()}
         </div>
         <div style={{ flex: 1 }} />
+
+        {/* 클라우드 동기화 표시 — 로그인했을 때만. 로컬 저장은 늘 돌고 있다. */}
+        {app.cloudEnabled() && (
+          <div
+            onClick={() => { if (s.account) app.syncCloudNow(); }}
+            title={
+              s.account
+                ? s.sync === 'error'
+                  ? '클라우드 저장 실패 · 눌러서 다시 시도 (기록은 이 기기에 남아 있습니다)'
+                  : '눌러서 지금 저장'
+                : '로그인하지 않아 이 기기에만 저장됩니다'
+            }
+            style={{
+              flex: 'none', display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px',
+              borderRadius: 6, border: '1px solid rgba(255,255,255,.18)', fontSize: 12,
+              color: 'rgba(255,255,255,.65)', cursor: s.account ? 'pointer' : 'default', whiteSpace: 'nowrap'
+            }}
+          >
+            <span
+              style={{
+                width: 6, height: 6, borderRadius: '50%', flex: 'none',
+                background: !s.account
+                  ? 'rgba(255,255,255,.35)'
+                  : s.sync === 'error'
+                    ? '#ff4d4f'
+                    : s.sync === 'saving'
+                      ? '#faad14'
+                      : '#52c41a'
+              }}
+            />
+            {!s.account
+              ? '이 기기에만 저장'
+              : s.sync === 'saving'
+                ? '저장 중…'
+                : s.sync === 'error'
+                  ? '저장 실패 · 다시 시도'
+                  : '클라우드 저장됨'}
+          </div>
+        )}
+
         <Button size="small" onClick={() => app.goWrap()}>
           회의 종료 · 회의록 생성
         </Button>

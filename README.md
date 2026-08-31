@@ -35,6 +35,96 @@ npm run preview      # 번들 확인
 npx tsc --noEmit     # 타입 검사
 ```
 
+**세 가지 기능은 전부 선택이고, 없으면 앱이 그만큼만 조용히 줄어든다.**
+
+| 없을 때 | 결과 |
+|---|---|
+| AI 서버 | 로컬 규칙 요약기로 우회. 요약 칸은 언제나 수동 편집 |
+| Firebase 설정 | 로컬 전용 모드. 회의는 `localStorage`에만 남는다 |
+| 로그인 | 클라우드 저장 안 함. 회의 진행에는 영향 없음 |
+
+---
+
+## 배포 (GitHub Pages)
+
+`main`에 푸시하면 [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)이
+타입 검사 → 빌드 → Pages 배포를 돌린다. 최초 1회만 아래를 해주면 된다.
+
+1. **저장소 Settings → Pages → Source: `GitHub Actions`**
+2. **Settings → Secrets and variables → Actions → Variables** 에 Firebase 웹 설정 6개를 넣는다
+   (`VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`,
+   `VITE_FIREBASE_STORAGE_BUCKET`, `VITE_FIREBASE_MESSAGING_SENDER_ID`, `VITE_FIREBASE_APP_ID`).
+   비워두면 로컬 전용 모드로 빌드된다.
+
+배포 주소는 `https://<사용자>.github.io/nonjeom/` 이다. `BASE_PATH`를 워크플로에서 넘겨
+Vite `base`를 저장소 이름에 맞추고, `404.html`을 `index.html` 사본으로 두어 하위 경로 진입도 받는다.
+
+> **알아둘 것 두 가지.**
+> - **비공개 저장소에서 Pages를 쓰려면 GitHub Pro 이상**이 필요하다. Free 플랜이면 저장소를
+>   공개로 바꿔야 한다.
+> - **Pages 사이트 자체는 누구나 접근 가능**하다(접근 제어가 붙는 Private Pages는 Enterprise 전용).
+>   저장소가 비공개여도 배포된 앱은 공개된다. 다만 배포되는 건 `dist/`뿐이라
+>   `docs/`의 PRD·프로토타입 자료는 올라가지 않는다.
+
+**AI 요약은 배포본에서 로컬 요약기로 동작한다.** Pages는 정적 호스팅이라 `server/index.ts`가
+설 자리가 없다 — `/api/ai/*` 요청이 404가 나면 클라이언트가 즉시 로컬로 우회한다(설계대로).
+배포본에서도 Claude 요약을 쓰려면 프록시를 따로 올리고(Cloud Run·Functions·Workers 등)
+`src/lib/ai.ts`의 호출 주소를 그쪽으로 돌리면 된다.
+
+---
+
+## 데이터베이스 (Firestore)
+
+**로컬 우선, 클라우드 동기화.** PRD §9가 권한 구조 그대로다 — `localStorage`가 회의 중
+진실의 원본이고, Firestore는 그 위에 얹혀 **회의 단위 저장·목록·재열람**을 담당한다
+(PRD §11의 후속 논의 항목에 대한 답).
+
+- 로컬 저장은 변경 후 0.6초, 클라우드 동기화는 4초 간격으로 밀어낸다. 회의록이 생성되는
+  순간에는 주기를 기다리지 않고 즉시 저장한다.
+- 클라우드 저장이 실패해도 **회의는 멈추지 않는다.** 로컬 기록이 남아 있고, 헤더의 표시가
+  빨간색으로 바뀐다(눌러서 재시도).
+- 세팅 화면에서 지난 회의를 열면 그 문서로 이어서 쓴다.
+
+### 최초 설정
+
+1. [Firebase 콘솔](https://console.firebase.google.com)에서 프로젝트를 만든다.
+2. **Authentication → Sign-in method → Google** 을 켠다.
+3. **Authentication → Settings → Authorized domains** 에 `<사용자>.github.io` 를 추가한다.
+   (안 하면 배포본에서 로그인 팝업이 막힌다.)
+4. **Firestore Database** 를 만든다 (프로덕션 모드).
+5. 규칙과 색인을 배포한다.
+   ```bash
+   npm i -g firebase-tools
+   firebase login
+   firebase deploy --only firestore:rules,firestore:indexes --project <프로젝트 id>
+   ```
+6. 웹 앱을 등록하고 `firebaseConfig` 값을 `.env`(로컬)와 저장소 Variables(배포)에 넣는다.
+
+### 문서 구조
+
+```
+meetings/{meetingId}
+  ownerId          로그인한 사용자 uid — 접근 제어의 근거
+  title, screen, participants[], agendas[]
+  nodes[]          회의 트리 전체 (PRD §4 데이터 모델)
+  labels[]         캔버스 자유 텍스트
+  seq, labelSeq, partSeq, startedAt, elapsed
+  collapsed, wrap, wrapIds, wrapOrig
+  topicCount, uttCount, openCount   목록용 집계 (문서를 통째로 읽지 않으려고)
+  slidesLocalOnly  장표 이미지가 빠졌는지
+  updatedAt        serverTimestamp
+```
+
+[`firestore.rules`](firestore.rules)는 `ownerId == request.auth.uid` 하나로 잠근다 —
+자기 회의만 읽고 쓰며, 수정 시 소유자를 바꿔치기할 수 없다. 그 밖의 모든 경로는 막혀 있다.
+Firebase 웹 설정값은 비밀이 아니다(클라이언트 번들에 그대로 실린다). **접근 제어는 전적으로
+이 규칙이 한다.**
+
+> **장표 이미지는 Firestore에 올라가지 않는다.** 한 장이 수백 KB인 data URI라 문서 한계
+> (1MB)를 즉시 넘긴다. 노드 자체는 남기고 이미지만 떼어내므로 회의록 구조는 어느 기기에서든
+> 온전히 열리고, 그림만 올린 기기에 남는다(`slidesLocalOnly` 표시). Firebase Storage로
+> 옮기는 것이 정공법이며 후속 과제다.
+
 ---
 
 ## 화면
@@ -83,11 +173,17 @@ src/
     summarize.ts       규칙 기반 로컬 요약기
     pdf.ts             PDF·이미지 → 장표 노드 (§7)
     persist.ts         로컬 우선 저장 (§9 데이터 유실)
+    firebase.ts        Firebase 지연 초기화 + 구글 로그인
+    cloud.ts           Firestore 회의 저장소 (저장·목록·재열람)
     text.ts            참석자 표시·시각·IME 판정
   screens/             Setup · Meeting · Wrap · Minutes
-  components/          NodeCard · ComposePopover · QuickNote · SidePanel · CanvasLabels
+  components/          NodeCard · ComposePopover · QuickNote · SidePanel · CanvasLabels · CloudBar
 server/
   index.ts             Claude 프록시 (브라우저에 키를 두지 않기 위한 얇은 층)
+firestore.rules        접근 제어 — 자기 회의만 읽고 쓴다
+firestore.indexes.json ownerId + updatedAt 복합 색인 (지난 회의 목록용)
+.github/workflows/
+  deploy.yml           GitHub Pages 배포
 docs/
   prd.pdf              구현 기준 문서
   prototype/           확정된 프로토타입과 디자인 시스템
@@ -173,6 +269,11 @@ AI는 **선택적이고 보조적**이다. 쓰지 않아도 서비스가 온전�
 
 ## 후속 논의 (PRD §11)
 
-PDF·PPTX 서버 변환 방식과 저장 위치·만료 정책 / 회의 데이터 영속화 범위(회의 단위 저장·목록·
-재열람) / 회의록 내보내기 형식 / 다음 회의로 넘긴 미결을 새 회의 세팅에서 자동으로 불러오는 흐름 /
-노드를 최상위로 떼어내는 버튼(현재는 드래그만 가능).
+- **장표 저장** — 지금은 이미지가 올린 기기에만 남는다. Firebase Storage로 옮기고 Firestore에는
+  URL만 두는 것이 정공법. PPTX 서버 변환과 만료 정책도 여기에 붙는다.
+- **배포본의 AI 요약** — Pages는 정적이라 프록시가 없다. Cloud Run·Functions에 올리면 해결된다.
+- 회의록 내보내기 형식(마크다운·PDF·문서 도구 연동).
+- 다음 회의로 넘긴 미결을 새 회의 세팅에서 자동으로 불러오는 흐름.
+- 노드를 최상위로 떼어내는 버튼(현재는 드래그만 가능).
+
+> 회의 데이터 영속화 범위는 Firestore로 답했다 — 회의 단위 저장·목록·재열람.

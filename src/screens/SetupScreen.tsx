@@ -3,6 +3,7 @@ import { Button, Input, Progress } from 'antd';
 import type App from '../App';
 import type { AppState } from '../App';
 import { dateLabel, isComposing } from '../lib/text';
+import CloudBar from '../components/CloudBar';
 
 /**
  * PRD §5.1 회의 세팅.
@@ -44,6 +45,9 @@ export default function SetupScreen({ app, s }: { app: App; s: AppState }): Reac
               borderRadius: 8, padding: 24, display: 'flex', flexDirection: 'column', gap: 24
             }}
           >
+            {/* 클라우드 로그인 · 지난 회의 (Firestore · 선택 기능) */}
+            <CloudBar app={app} s={s} />
+
             {/* 이전 회의 이어하기 — PRD §9 데이터 유실 */}
             {s.saved && (
               <div

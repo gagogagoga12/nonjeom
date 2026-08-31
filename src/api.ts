@@ -20,6 +20,15 @@ export interface AppApi {
   resumeSaved(): void;
   discardSaved(): void;
 
+  // ─ 클라우드 (Firestore · 선택 기능). 설정이나 로그인이 없으면 앱은 로컬 전용으로 돈다.
+  cloudEnabled(): boolean;
+  signInCloud(): Promise<void>;
+  signOutCloud(): Promise<void>;
+  refreshCloudList(): Promise<void>;
+  openCloudMeeting(id: string): Promise<void>;
+  deleteCloudMeeting(id: string): Promise<void>;
+  syncCloudNow(): void;
+
   // ─ 캔버스 (PRD §5.2·§6)
   select(id: string | null): void;
   setHover(id: string | null): void;
