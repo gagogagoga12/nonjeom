@@ -563,6 +563,15 @@ export default class App extends React.Component<Record<string, never>, AppState
       if (id) { e.preventDefault(); this.deleteNode(id); }
       return;
     }
+    // Tab: 선택된 노드에 발언 입력 팝오버를 연다 ('+' 버튼과 동일한 동작)
+    if (e.key === 'Tab') {
+      const id = this.state.currentId;
+      const s = this.state;
+      if (!id || s.drag || s.compose || s.quick || s.labelEdit || s.textMode) return;
+      e.preventDefault();
+      this.openCompose(id);
+      return;
+    }
     // F: 일단 적어두기 (ㄹ = 한글 자판의 같은 키)
     if (e.key === 'f' || e.key === 'F' || e.key === 'ㄹ') { e.preventDefault(); this.openQuick(); return; }
     // T: 텍스트 도구
