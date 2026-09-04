@@ -25,7 +25,7 @@ export const ST: Record<Status, StatusSpec> = {
 export const ORDER: Status[] = ['open', 'hold', 'bait', 'decided'];
 
 /** 깊이별 카드 폭. 최상위 안건이 좁고 발언이 붙는 아래 층은 넓다. */
-export const COL_W = [206, 226, 226, 226, 226];
+export const COL_W = [240, 260, 260, 260, 260];
 
 /** 형제 카드 사이 세로 간격. 선택 노드 위에 뜨는 툴바(-37px)를 포함해 잡는다(PRD §10 '떠 있는 요소의 자리를 레이아웃에 포함한다'). */
 export const GAP_V = 50;
@@ -42,10 +42,11 @@ export interface Zone {
 }
 
 // 글자 영역은 zone마다 px line-height를 고정하고, 클립 높이와 카드 높이 모두 그 값만 쓴다.
+// 나중에 다시 봐도 한눈에 읽히도록 기본값보다 한 단계 키운 크기(PRD §9 타입 래더 16px)를 쓴다.
 export const ZONE: Record<'sum' | 'utt' | 'topic', Zone> = {
-  sum: { fs: 14, lh: 22, cpl: 15, max: 2, padV: 25 },
-  utt: { fs: 14, lh: 22, cpl: 15, max: 3, padV: 26 },
-  topic: { fs: 14, lh: 22, cpl: 15, max: 2, padV: 26 }
+  sum: { fs: 16, lh: 24, cpl: 13, max: 2, padV: 27 },
+  utt: { fs: 16, lh: 24, cpl: 13, max: 3, padV: 28 },
+  topic: { fs: 16, lh: 24, cpl: 13, max: 2, padV: 28 }
 };
 
 export const META_H = 20;

@@ -563,13 +563,15 @@ export default class App extends React.Component<Record<string, never>, AppState
       if (id) { e.preventDefault(); this.deleteNode(id); }
       return;
     }
-    // Tab: 선택된 노드에 발언 입력 팝오버를 연다 ('+' 버튼과 동일한 동작)
+    // Tab: 선택된 노드에 발언 입력 팝오버를 연다 ('+' 버튼과 동일한 동작). 노드 종류(주제·발언) 상관없이 동작한다.
+    // Shift+Tab: 선택된 노드 우측에 새 논의 주제를 바로 연결한다(발언 노드에서 곁가지 논의를 띄울 때).
     if (e.key === 'Tab') {
       const id = this.state.currentId;
       const s = this.state;
       if (!id || s.drag || s.compose || s.quick || s.labelEdit || s.textMode) return;
       e.preventDefault();
-      this.openCompose(id);
+      if (e.shiftKey) this.addChildTopic(id);
+      else this.openCompose(id);
       return;
     }
     // F: 일단 적어두기 (ㄹ = 한글 자판의 같은 키)
@@ -1074,6 +1076,29 @@ export default class App extends React.Component<Record<string, never>, AppState
     );
   }
 
+  /**
+   * Shift+Tab — 선택된 노드 우측에 새 논의 주제를 바로 연결한다.
+   * 발언 노드에서 곁가지 논의를 띄우고 싶을 때, 상세 패널의 '승격'(기존 노드를 바꿔치기)과 달리
+   * 새 노드를 추가해 원래 발언은 그대로 남긴다. 제목은 그 자리에서 바로 입력한다(즉시성).
+   */
+  addChildTopic(parentId: string): void {
+    const id = 'n' + this.state.seq;
+    this.setState(
+      (s) => ({
+        nodes: s.nodes.concat([{
+          id, parentId, kind: 'topic' as const,
+          summary: '', status: 'open' as Status, decidedAt: null
+        }]),
+        seq: s.seq + 1,
+        currentId: id, focusId: null, compose: null
+      }),
+      () => {
+        this.ensureVisible(id);
+        this.startZoneEdit(id, 'raw');
+      }
+    );
+  }
+
   // ─────────────────────────────────────────────────────────── 발언 입력 (PRD §5.3)
 
   /** UTT-1 — 팝오버는 트리거(노드 우측 + 버튼) 기준으로 그 자리에 열린다 */
@@ -1219,9 +1244,11 @@ export default class App extends React.Component<Record<string, never>, AppState
     this.setState(
       (s) => ({
         nodes: s.nodes.concat([{
+          // 미분류 메모는 화자를 골랐어도 summary에만 글을 둔다(sortAsTopic·SidePanel이 그렇게 읽는다).
+          // 예전엔 화자가 있으면 rawText에 넣었는데, topic·비dual 노드는 summary만 그려서 카드가 빈 채 보였다.
           id, parentId: null, kind: 'topic' as const, unsorted: true,
           speaker: q.speaker ?? undefined, at,
-          rawText: q.speaker ? text : '', summary: q.speaker ? '' : text,
+          summary: text,
           status: 'open' as Status, decidedAt: null
         }]),
         seq: s.seq + 1,
@@ -1585,9 +1612,11 @@ export default class App extends React.Component<Record<string, never>, AppState
       this.tb0 = { ...this.toCanvas(e.clientX, e.clientY), moved: false };
       return;
     }
-    // CV-6 — 빈 공간을 클릭하면 선택이 해제되고 툴바·팝업·상세 패널이 함께 닫힌다
+    // CV-6 — 빈 공간을 클릭하면 선택이 해제되고 툴바·팝업·상세 패널이 함께 닫힌다.
+    // mousedown이 텍스트칸의 blur보다 먼저 처리되므로, 편집 중이었다면 지우기 전에 먼저 커밋한다.
     if (!s.spaceDown && e.button === 0 && onBlank) {
-      if (s.currentId || s.editId || s.compose || s.labelSel) {
+      if (s.editId) this.commitEdit();
+      if (s.currentId || s.compose || s.labelSel) {
         this.setState({ currentId: null, editId: null, focusId: null, compose: null, labelSel: null, panel: s.panel === 'node' ? null : s.panel });
       }
       return;
