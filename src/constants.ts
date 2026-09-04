@@ -24,8 +24,11 @@ export const ST: Record<Status, StatusSpec> = {
 
 export const ORDER: Status[] = ['open', 'hold', 'bait', 'decided'];
 
-/** 깊이별 카드 폭. 최상위 안건이 좁고 발언이 붙는 아래 층은 넓다. */
-export const COL_W = [240, 260, 260, 260, 260];
+/**
+ * 깊이별 카드 폭. 최상위 안건은 좁은 척추로 두고, 발언이 붙는 아래 층은 넓힌다 —
+ * 좁으면 줄바꿈이 잦아져 3줄 만에 잘리고, 기본값만 봐서는 무슨 말인지 알아보기 어렵다.
+ */
+export const COL_W = [240, 320, 320, 320, 320];
 
 /** 형제 카드 사이 세로 간격. 선택 노드 위에 뜨는 툴바(-37px)를 포함해 잡는다(PRD §10 '떠 있는 요소의 자리를 레이아웃에 포함한다'). */
 export const GAP_V = 50;
@@ -43,9 +46,11 @@ export interface Zone {
 
 // 글자 영역은 zone마다 px line-height를 고정하고, 클립 높이와 카드 높이 모두 그 값만 쓴다.
 // 나중에 다시 봐도 한눈에 읽히도록 기본값보다 한 단계 키운 크기(PRD §9 타입 래더 16px)를 쓴다.
+// utt는 카드 폭도 넓어졌으니(COL_W) 한 줄에 더 들어간다 — cpl을 다시 잡는다.
+// max(기본으로 보여주는 줄 수)도 3→6으로 늘려, 펼치기를 누르지 않아도 웬만한 발언은 다 보인다.
 export const ZONE: Record<'sum' | 'utt' | 'topic', Zone> = {
   sum: { fs: 16, lh: 24, cpl: 13, max: 2, padV: 27 },
-  utt: { fs: 16, lh: 24, cpl: 13, max: 3, padV: 28 },
+  utt: { fs: 16, lh: 24, cpl: 16, max: 6, padV: 28 },
   topic: { fs: 16, lh: 24, cpl: 13, max: 2, padV: 28 }
 };
 
