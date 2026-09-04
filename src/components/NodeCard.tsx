@@ -214,6 +214,9 @@ export default function NodeCard({ app, s, n, b, dim }: Props): React.ReactEleme
         onClick={() => app.select(n.id)}
         onMouseDown={(e) => {
           if (e.button !== 0 || s.editId === n.id || s.spaceDown) return;
+          // preventDefault가 포커스 이동(=텍스트칸의 blur)을 막아버리므로,
+          // 다른 노드를 편집 중이었다면 여기서 직접 커밋해야 편집 내용이 유실되지 않는다.
+          if (s.editId) app.commitEdit();
           e.stopPropagation();
           e.preventDefault();
           app.beginNodeDrag(n.id, e);
@@ -261,7 +264,7 @@ export default function NodeCard({ app, s, n, b, dim }: Props): React.ReactEleme
             {z.dual && (
               <div style={{ flex: 'none', padding: '13px 15px 12px' }}>
                 {editingSum
-                  ? editBox(z.sumEditLines * ZONE.sum.lh + 18, 14, 600)
+                  ? editBox(z.sumEditLines * ZONE.sum.lh + 18, ZONE.sum.fs, 600)
                   : (
                     <div
                       onDoubleClick={(e) => { stop(e); app.startZoneEdit(n.id, 'sum'); }}
@@ -270,14 +273,14 @@ export default function NodeCard({ app, s, n, b, dim }: Props): React.ReactEleme
                       <div
                         ref={(el) => { app.textEls[z.sumKey] = el; }}
                         style={{
-                          fontSize: 14, fontWeight: 600, color: 'rgba(0,0,0,.88)', lineHeight: `${ZONE.sum.lh}px`,
+                          fontSize: ZONE.sum.fs, fontWeight: 600, color: 'rgba(0,0,0,.88)', lineHeight: `${ZONE.sum.lh}px`,
                           letterSpacing: '-.015em', paddingRight: sumMore || rawMore ? 20 : 0,
                           overflowWrap: 'anywhere', wordBreak: 'break-word'
                         }}
                       >
                         {n.summary}
                       </div>
-                      {sumMore && moreChip(sumOpen, z.sumKey, ZONE.sum.lh, 14, 'rgba(0,0,0,.88)')}
+                      {sumMore && moreChip(sumOpen, z.sumKey, ZONE.sum.lh, ZONE.sum.fs, 'rgba(0,0,0,.88)')}
                     </div>
                   )}
               </div>
