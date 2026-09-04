@@ -43,12 +43,14 @@ export interface AppApi {
   undoLast(): void;
   notify(msg: string): void;
 
-  // ─ 발언 입력 (PRD §5.3)
+  // ─ 발언 입력 (PRD §5.3) — 한 팝오버 안에 화자별 칸(entries)을 여러 개 쌓았다가 한 번에 나눈다
   openCompose(parentId: string): void;
-  setComposeText(v: string): void;
-  setComposeSpeaker(id: string): void;
-  cycleComposeSpeaker(back: boolean): void;
-  commitCompose(keepOpen: boolean): void;
+  setComposeText(i: number, v: string): void;
+  setComposeSpeaker(i: number, id: string): void;
+  cycleComposeSpeaker(i: number, back: boolean): void;
+  addComposeEntry(): void;
+  removeComposeEntry(i: number): void;
+  splitCompose(): void;
   closeCompose(): void;
 
   // ─ 일단 적어두기 (PRD §5.4)

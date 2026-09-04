@@ -84,10 +84,16 @@ export interface DragState {
   y: number;
 }
 
-export interface ComposeState {
-  parentId: string;
+/** 팝오버 안의 발언 한 덩어리 — 화자 하나에 원문 하나 */
+export interface ComposeEntry {
   speaker: string;
   text: string;
+}
+
+export interface ComposeState {
+  parentId: string;
+  /** 여러 화자의 발언을 한 팝오버 안에서 이어 적다가, 한 번에 노드로 나눈다 */
+  entries: ComposeEntry[];
 }
 
 export interface QuickState {

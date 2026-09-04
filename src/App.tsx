@@ -1083,7 +1083,7 @@ export default class App extends React.Component<Record<string, never>, AppState
    */
   addChildUtterance(parentId: string): void {
     const id = 'n' + this.state.seq;
-    const speaker = this.state.compose?.speaker || this.state.participants[0]?.id || '';
+    const speaker = this.lastComposeSpeaker(this.state);
     this.setState(
       (s) => ({
         nodes: s.nodes.concat([{
@@ -1102,19 +1102,24 @@ export default class App extends React.Component<Record<string, never>, AppState
 
   // ─────────────────────────────────────────────────────────── 발언 입력 (PRD §5.3)
 
-  /** UTT-1 — 팝오버는 트리거(노드 우측 + 버튼) 기준으로 그 자리에 열린다 */
+  /**
+   * UTT-1 — 팝오버는 트리거(노드 우측 + 버튼) 기준으로 그 자리에 열린다.
+   * 여러 화자의 발언을 한 팝오버 안에 이어 적다가(entries) splitCompose로 한 번에 나눈다 —
+   * 화자마다 팝오버를 새로 띄우지 않아도 되게 한다.
+   */
   openCompose(parentId: string): void {
     this.setState(
       (s) => ({
         currentId: parentId, focusId: null,
-        compose: {
-          parentId,
-          speaker: s.compose?.speaker || s.participants[0]?.id || '',
-          text: ''
-        }
+        compose: { parentId, entries: [{ speaker: this.lastComposeSpeaker(s), text: '' }] }
       }),
       () => this.ensureComposeVisible(parentId)
     );
+  }
+  /** 화자를 못 고르면 지난 칸에서 마지막으로 쓴 화자, 그것도 없으면 첫 참석자를 기본값으로 쓴다 */
+  private lastComposeSpeaker(s: AppState): string {
+    const entries = s.compose?.entries;
+    return (entries && entries[entries.length - 1]?.speaker) || s.participants[0]?.id || '';
   }
 
   /**
@@ -1131,10 +1136,11 @@ export default class App extends React.Component<Record<string, never>, AppState
     if (!p) return;
     const sibs = this.childrenOf(parentId).map((c) => boxMap[c.id]).filter(Boolean);
     const bottom = sibs.length ? Math.max(...sibs.map((c) => c.top + c.h)) : p.top + p.h;
-    // ComposePopover와 같은 위치 규칙 (left/top/폭 320 · 높이 약 300)
+    // ComposePopover와 같은 위치 규칙 (폭 400 · 화자 칸이 쌓이는 만큼 높이도 늘어난다, 최대치로 어림잡는다)
     const left = p.left + p.w + 52;
     const top = Math.max(p.top, bottom + 12);
-    const W = 320, H = 300, M = 16;
+    const entries = this.state.compose?.entries.length ?? 1;
+    const W = 400, H = Math.min(560, 150 + entries * 116), M = 16;
     const z = this.state.zoom, pan = this.state.pan;
     const vw = el.clientWidth, vh = el.clientHeight;
     let dx = 0, dy = 0;
@@ -1148,33 +1154,79 @@ export default class App extends React.Component<Record<string, never>, AppState
     if (t + dy < M) dy = M - t;
     if (dx || dy) this.setState({ animate: true, pan: { x: pan.x + dx, y: pan.y + dy } });
   }
-  setComposeText(v: string): void {
-    this.setState((x) => (x.compose ? { compose: { ...x.compose, text: v } } : null));
+  setComposeText(i: number, v: string): void {
+    this.setState((x) => (x.compose
+      ? { compose: { ...x.compose, entries: x.compose.entries.map((e, k) => (k === i ? { ...e, text: v } : e)) } }
+      : null));
   }
-  setComposeSpeaker(id: string): void {
-    this.setState((x) => (x.compose ? { compose: { ...x.compose, speaker: id } } : null));
+  setComposeSpeaker(i: number, id: string): void {
+    this.setState((x) => (x.compose
+      ? { compose: { ...x.compose, entries: x.compose.entries.map((e, k) => (k === i ? { ...e, speaker: id } : e)) } }
+      : null));
   }
-  /** UTT-2 — Tab/⇧Tab으로 커서를 입력칸에 둔 채 화자를 순환한다 */
-  cycleComposeSpeaker(back: boolean): void {
+  /** UTT-2 — Tab/⇧Tab으로 커서를 그 칸에 둔 채 그 칸의 화자만 순환한다 */
+  cycleComposeSpeaker(i: number, back: boolean): void {
     this.setState((x) => {
       const c = x.compose;
-      if (!c || !x.participants.length) return null;
+      const cur = c?.entries[i];
+      if (!c || !cur || !x.participants.length) return null;
       const ps = x.participants;
-      const i = ps.findIndex((p) => p.id === c.speaker);
-      const next = ps[((i < 0 ? 0 : i + (back ? -1 : 1)) + ps.length) % ps.length];
-      return { compose: { ...c, speaker: next.id } };
-    });
+      const at = ps.findIndex((p) => p.id === cur.speaker);
+      const next = ps[((at < 0 ? 0 : at + (back ? -1 : 1)) + ps.length) % ps.length];
+      return { compose: { ...c, entries: c.entries.map((e, k) => (k === i ? { ...e, speaker: next.id } : e)) } };
+    }, () => this.ensureComposeVisible(this.state.compose?.parentId ?? ''));
   }
-  /** UTT-3 — 확정 후에도 팝오버는 열린 채 비워져 연달아 입력한다 */
-  commitCompose(keepOpen: boolean): void {
+  /** ⌘/Ctrl+⏎ 또는 '+' — 지금 칸은 그대로 두고 같은 화자로 새 칸을 하나 더 연다 */
+  addComposeEntry(): void {
+    this.setState(
+      (x) => {
+        if (!x.compose) return null;
+        const last = x.compose.entries[x.compose.entries.length - 1];
+        return {
+          compose: {
+            ...x.compose,
+            entries: [...x.compose.entries, { speaker: last?.speaker || x.participants[0]?.id || '', text: '' }]
+          }
+        };
+      },
+      () => this.ensureComposeVisible(this.state.compose?.parentId ?? '')
+    );
+  }
+  /** 잘못 늘린 칸을 지운다. 한 칸만 남으면 지우는 대신 비운다(팝오버가 통째로 없어지지 않게) */
+  removeComposeEntry(i: number): void {
+    this.setState(
+      (x) => {
+        if (!x.compose) return null;
+        if (x.compose.entries.length <= 1) {
+          return { compose: { ...x.compose, entries: [{ ...x.compose.entries[0], text: '' }] } };
+        }
+        return { compose: { ...x.compose, entries: x.compose.entries.filter((_, k) => k !== i) } };
+      },
+      () => this.ensureComposeVisible(this.state.compose?.parentId ?? '')
+    );
+  }
+  /** 팝오버 안에 화자별로 쌓아둔 발언을 한 번에 각각 노드로 나눈다 */
+  splitCompose(): void {
     const c = this.state.compose;
     if (!c) return;
-    const text = c.text.trim();
-    if (!text) { if (!keepOpen) this.setState({ compose: null }); return; }
-    this.addUtterance(c.parentId, c.speaker, text);
-    this.setState({
-      compose: keepOpen ? { parentId: c.parentId, speaker: c.speaker, text: '' } : null
-    });
+    const rows = c.entries.map((e) => ({ speaker: e.speaker, text: e.text.trim() })).filter((r) => r.text);
+    if (!rows.length) { this.setState({ compose: null }); return; }
+    this.setState(
+      (s) => {
+        const made: MeetNode[] = rows.map((r, k) => ({
+          id: 'n' + (s.seq + k), parentId: c.parentId, kind: 'utt' as const, speaker: r.speaker,
+          summary: '', rawText: r.text, at: this.clock(), status: 'open' as Status, decidedAt: null
+        }));
+        return {
+          nodes: s.nodes.concat(made),
+          seq: s.seq + made.length,
+          currentId: made[made.length - 1].id,
+          focusId: null,
+          compose: null
+        };
+      },
+      () => this.ensureVisible(this.state.currentId)
+    );
   }
   closeCompose(): void { this.setState({ compose: null }); }
 
