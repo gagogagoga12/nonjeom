@@ -3,7 +3,7 @@ import {
   BAR_W, ORDER, SNAP, ST, UNDO_LIMIT, ZONE, ZOOM_MAX, ZOOM_MIN
 } from './constants';
 import {
-  boxesOf, canReparent, descendants, hasOutcome, lineCount, type Metrics, zonesOf
+  boxesOf, canReparent, descendants, hasOutcome, lineCount, sanitizeNodes, type Metrics, zonesOf
 } from './lib/layout';
 import { aiOutcome, aiSummary, probeAi } from './lib/ai';
 import { filesToShots, type Shot } from './lib/pdf';
@@ -870,7 +870,7 @@ export default class App extends React.Component<Record<string, never>, AppState
     this.setState({
       screen: v.screen === 'setup' ? 'meeting' : v.screen,
       title: v.title, participants: v.participants, partSeq: v.partSeq, agendas: v.agendas,
-      nodes: v.nodes, labels: v.labels, seq: v.seq, labelSeq: v.labelSeq,
+      nodes: sanitizeNodes(v.nodes), labels: v.labels, seq: v.seq, labelSeq: v.labelSeq,
       startedAt: v.startedAt, elapsed: v.elapsed, collapsed: v.collapsed,
       wrap: v.wrap, wrapIds: v.wrapIds, wrapOrig: v.wrapOrig,
       currentId: v.nodes[0]?.id ?? null, saved: null, pan: { x: 24, y: 12 }, zoom: 1,
@@ -914,7 +914,7 @@ export default class App extends React.Component<Record<string, never>, AppState
       {
         screen: v.screen === 'setup' ? 'meeting' : v.screen,
         title: v.title, participants: v.participants, partSeq: v.partSeq, agendas: v.agendas,
-        nodes: v.nodes, labels: v.labels, seq: v.seq, labelSeq: v.labelSeq,
+        nodes: sanitizeNodes(v.nodes), labels: v.labels, seq: v.seq, labelSeq: v.labelSeq,
         startedAt: v.startedAt, elapsed: v.elapsed, collapsed: v.collapsed,
         wrap: v.wrap, wrapIds: v.wrapIds, wrapOrig: v.wrapOrig,
         currentId: v.nodes[0]?.id ?? null, saved: null, meetingId: v.id,

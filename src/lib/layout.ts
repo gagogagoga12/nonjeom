@@ -17,6 +17,19 @@ export interface Zones {
 }
 
 /**
+ * 예전 버전에서는 미분류 메모에 화자를 고르면 글이 rawText에만 남아 카드가 빈 채로 보였다
+ * (미분류 메모는 summary에만 글이 있다는 전제를 깨뜨렸다 — sortAsTopic·SidePanel 참고).
+ * 저장된 회의를 불러올 때 그 모양을 여기서 바로잡는다.
+ */
+export function sanitizeNodes(nodes: MeetNode[]): MeetNode[] {
+  return nodes.map((n) =>
+    n.unsorted && n.kind === 'topic' && !n.summary.trim() && (n.rawText || '').trim()
+      ? { ...n, summary: n.rawText!, rawText: '' }
+      : n
+  );
+}
+
+/**
  * 요약/원문 두 영역을 쓸지, 어느 zone으로 그릴지 한 곳에서 결정한다.
  * 승격된 발언 노드도 발언 노드와 같은 두 영역 구조를 유지한다(PRD §5.6).
  */
@@ -30,7 +43,9 @@ export function zonesOf(n: MeetNode): Zones {
     dual,
     wasUtt: !isUtt && !!n.speaker && !!raw,
     rawZ: isUtt || dual ? ZONE.utt : ZONE.topic,
-    rawSrc: dual ? n.rawText! : isUtt ? n.rawText || '' : n.summary
+    // summary가 비어 있으면 rawText로 대신 그린다 — sortAsTopic과 같은 안전장치.
+    // (예전 버전에서 만들어진 미분류 메모는 rawText에만 글이 있는 경우가 있어, 안 그러면 카드가 빈 채로 보인다)
+    rawSrc: dual ? n.rawText! : isUtt ? n.rawText || '' : n.summary.trim() || n.rawText || ''
   };
 }
 
