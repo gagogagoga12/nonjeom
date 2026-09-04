@@ -564,13 +564,13 @@ export default class App extends React.Component<Record<string, never>, AppState
       return;
     }
     // Tab: 선택된 노드에 발언 입력 팝오버를 연다 ('+' 버튼과 동일한 동작). 노드 종류(주제·발언) 상관없이 동작한다.
-    // Shift+Tab: 선택된 노드 우측에 새 논의 주제를 바로 연결한다(발언 노드에서 곁가지 논의를 띄울 때).
+    // Shift+Tab: 팝오버 없이 그 자리에서 바로 입력창이 열리는 빠른 버전 — 연달아 발언을 붙일 때 쓴다.
     if (e.key === 'Tab') {
       const id = this.state.currentId;
       const s = this.state;
       if (!id || s.drag || s.compose || s.quick || s.labelEdit || s.textMode) return;
       e.preventDefault();
-      if (e.shiftKey) this.addChildTopic(id);
+      if (e.shiftKey) this.addChildUtterance(id);
       else this.openCompose(id);
       return;
     }
@@ -1077,17 +1077,18 @@ export default class App extends React.Component<Record<string, never>, AppState
   }
 
   /**
-   * Shift+Tab — 선택된 노드 우측에 새 논의 주제를 바로 연결한다.
-   * 발언 노드에서 곁가지 논의를 띄우고 싶을 때, 상세 패널의 '승격'(기존 노드를 바꿔치기)과 달리
-   * 새 노드를 추가해 원래 발언은 그대로 남긴다. 제목은 그 자리에서 바로 입력한다(즉시성).
+   * Shift+Tab — 선택된 노드 우측에 발언 노드를 바로 연결한다.
+   * Tab(+ 버튼)과 같은 자리에 붙지만, 팝오버를 거치지 않고 그 자리에서 바로 입력창이
+   * 열려 원문을 적을 수 있다(즉시성). 화자는 마지막에 쓴 화자를 이어받는다.
    */
-  addChildTopic(parentId: string): void {
+  addChildUtterance(parentId: string): void {
     const id = 'n' + this.state.seq;
+    const speaker = this.state.compose?.speaker || this.state.participants[0]?.id || '';
     this.setState(
       (s) => ({
         nodes: s.nodes.concat([{
-          id, parentId, kind: 'topic' as const,
-          summary: '', status: 'open' as Status, decidedAt: null
+          id, parentId, kind: 'utt' as const, speaker,
+          summary: '', rawText: '', at: this.clock(), status: 'open' as Status, decidedAt: null
         }]),
         seq: s.seq + 1,
         currentId: id, focusId: null, compose: null
